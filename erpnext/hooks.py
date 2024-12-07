@@ -7,7 +7,7 @@ app_color = "#e74c3c"
 app_email = "info@erpnext.com"
 app_license = "GNU General Public License (v3)"
 source_link = "https://github.com/thinknxg/thinknxg-ERP.git"
-app_logo_url = "/assets/erpnext/images/thinknxg-erp-logo_main_.svg"
+app_logo_url = "/assets/erpnext/images/thinknxg-logo.svg"
 
 
 add_to_apps_screen = [
