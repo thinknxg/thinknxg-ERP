@@ -1,4 +1,4 @@
-app_name = "thinknxg ERP"
+app_name = "erpnext"
 app_title = "thinknxg ERP"
 app_publisher = "thinknxg Technologies Pvt. Ltd."
 app_description = """ERP made simple"""
