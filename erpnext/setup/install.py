@@ -170,25 +170,25 @@ def add_standard_navbar_items():
 		{
 			"item_label": "Documentation",
 			"item_type": "Route",
-			"route": "https://docs.erpnext.com/",
+			"route": "https://docs.thinknxg.com",
 			"is_standard": 1,
 		},
 		{
 			"item_label": "User Forum",
 			"item_type": "Route",
-			"route": "https://discuss.frappe.io",
+			"route": " https://discuss.thinknxg.com",
 			"is_standard": 1,
 		},
 		{
-			"item_label": "Frappe School",
+			"item_label": "thinkNXG School",
 			"item_type": "Route",
-			"route": "https://frappe.io/school?utm_source=in_app",
+			"route": "https://thinknxg.school",
 			"is_standard": 1,
 		},
 		{
-			"item_label": "Report an Issue",
+			"item_label": "Report an Issue",	
 			"item_type": "Route",
-			"route": "https://github.com/frappe/erpnext/issues",
+			"route": "https://github.com/thinknxg/thinknxg-ERP/issues",
 			"is_standard": 1,
 		},
 	]
