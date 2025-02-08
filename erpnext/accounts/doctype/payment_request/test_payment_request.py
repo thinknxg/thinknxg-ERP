@@ -83,8 +83,7 @@ class TestPaymentRequest(FrappeTestCase):
 
 	def test_payment_entry_against_purchase_invoice(self):
 		si_usd = make_purchase_invoice(
-			customer="_Test Supplier USD",
-			debit_to="_Test Payable USD - _TC",
+			supplier="_Test Supplier USD",
 			currency="USD",
 			conversion_rate=50,
 		)
@@ -108,8 +107,7 @@ class TestPaymentRequest(FrappeTestCase):
 
 	def test_multiple_payment_entry_against_purchase_invoice(self):
 		purchase_invoice = make_purchase_invoice(
-			customer="_Test Supplier USD",
-			debit_to="_Test Payable USD - _TC",
+			supplier="_Test Supplier USD",
 			currency="USD",
 			conversion_rate=50,
 		)
@@ -543,3 +541,30 @@ class TestPaymentRequest(FrappeTestCase):
 		pr = make_payment_request(dt="Sales Invoice", dn=si.name, mute_email=1)
 
 		self.assertEqual(pr.grand_total, si.outstanding_amount)
+
+
+def test_partial_paid_invoice_with_submitted_payment_entry(self):
+	pi = make_purchase_invoice(currency="INR", qty=1, rate=5000)
+	pi.save()
+	pi.submit()
+
+	pe = get_payment_entry("Purchase Invoice", pi.name, bank_account="_Test Bank - _TC")
+	pe.reference_no = "PURINV0001"
+	pe.reference_date = frappe.utils.nowdate()
+	pe.paid_amount = 2500
+	pe.references[0].allocated_amount = 2500
+	pe.save()
+	pe.submit()
+	pe.cancel()
+
+	pe = get_payment_entry("Purchase Invoice", pi.name, bank_account="_Test Bank - _TC")
+	pe.reference_no = "PURINV0002"
+	pe.reference_date = frappe.utils.nowdate()
+	pe.paid_amount = 2500
+	pe.references[0].allocated_amount = 2500
+	pe.save()
+	pe.submit()
+
+	pi.load_from_db()
+	pr = make_payment_request(dt="Purchase Invoice", dn=pi.name, mute_email=1)
+	self.assertEqual(pr.grand_total, pi.outstanding_amount)
