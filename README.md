@@ -56,4 +56,4 @@ By contributing to thinkNXG ERP, you agree that your contributions will be licen
 
 ## Logo and Trademark Policy
 
-Please read our [Logo and Trademark Policy].
+Please read our [Logo and Trademark Policy](TRADEMARK_POLICY.md).
