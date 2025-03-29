@@ -27,7 +27,24 @@ thinkNXG ERP as a monolith includes the following areas for managing businesses:
 1. [Website Management]
    
 
-thinkNXG ERP is built on the [thinkNXG Framework]a full-stack web app framework built with Python & JavaScript.
+thinkNXG ERP is built on the [thinkNXG Framework] a full-stack web app framework built with Python & JavaScript.
+
+## Production Setup
+
+### Managed SaaS and Premium Hosting
+
+You can try [thinkNXG Cloud](https://thinknxgcloud.com), a simple, user-friendly and sophisticated platform to host thinkNXG applications with no stress.
+
+Focus on your projects. We'll take care of your Servers.thinkNXG Cloud takes care of installation, setup, upgrades, monitoring, maintenance and support of your thinkNXG deployments. It is a fully featured developer platform with an ability to manage and control multiple thinkNXG deployments.
+
+<div>
+	<a href="https://thinknxgcloud.com" target="_blank">
+		<picture>
+			<source media="(prefers-color-scheme: dark)" srcset="https://thinknxg.com/wp-content/uploads/2025/03/try-on-thinknxg-cloud.png">
+			<img src="https://thinknxg.com/wp-content/uploads/2025/03/try-on-thinknxg-cloud.png" alt="Try on thinkNXG Cloud" height="28" />
+		</picture>
+	</a>
+</div>
 
 ## License
 
