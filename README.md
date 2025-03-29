@@ -5,9 +5,10 @@
     </a>
     <h2>thinkNXG ERP</h2>
     <p align="center">
-        <p>ERP made simple</p>
+        <p>Lithe FLOSS ERP</p>
     </p>
-
+[![CI](https://github.com/frappe/erpnext/actions/workflows/server-tests-mariadb.yml/badge.svg?event=schedule)](https://github.com/frappe/erpnext/actions/workflows/server-tests-mariadb.yml)
+[![docker pulls](https://img.shields.io/docker/pulls/frappe/erpnext-worker.svg)](https://hub.docker.com/r/frappe/erpnext-worker)
 
 </div>
 
