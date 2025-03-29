@@ -5,7 +5,7 @@
     </a>
     <h2>thinkNXG ERP</h2>
     <p align="center">
-        <p>Lithe FLOSS ERP</p>
+        <p>World's Best Lithe FLOSS ERP</p>
     </p>
 
 
