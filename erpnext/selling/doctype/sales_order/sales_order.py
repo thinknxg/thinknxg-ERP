@@ -85,6 +85,7 @@ class SalesOrder(SellingController):
 		company: DF.Link
 		company_address: DF.Link | None
 		company_address_display: DF.SmallText | None
+		company_contact_person: DF.Link | None
 		contact_display: DF.SmallText | None
 		contact_email: DF.Data | None
 		contact_mobile: DF.SmallText | None
@@ -871,7 +872,12 @@ def make_material_request(source_name, target_doc=None):
 			},
 			"Sales Order Item": {
 				"doctype": "Material Request Item",
-				"field_map": {"name": "sales_order_item", "parent": "sales_order"},
+				"field_map": {
+					"name": "sales_order_item",
+					"parent": "sales_order",
+					"delivery_date": "required_by",
+					"bom_no": "bom_no",
+				},
 				"condition": lambda item: not frappe.db.exists(
 					"Product Bundle", {"name": item.item_code, "disabled": 0}
 				)
@@ -1039,7 +1045,7 @@ def make_delivery_note(source_name, target_doc=None, kwargs=None):
 					ignore_permissions=True,
 				)
 
-				dn_item.qty = flt(sre.reserved_qty) * flt(dn_item.get("conversion_factor", 1))
+				dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.get("conversion_factor", 1))
 
 				if sre.reservation_based_on == "Serial and Batch" and (sre.has_serial_no or sre.has_batch_no):
 					dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher(sre)
@@ -1356,7 +1362,8 @@ def make_purchase_order_for_default_supplier(source_name, selected_items=None, t
 					"postprocess": update_item,
 					"condition": lambda doc: doc.ordered_qty < doc.stock_qty
 					and doc.supplier == supplier
-					and doc.item_code in items_to_map,
+					and doc.item_code in items_to_map
+					and doc.delivered_by_supplier == 1,
 				},
 			},
 			target_doc,
@@ -1500,6 +1507,7 @@ def make_purchase_order(source_name, selected_items=None, target_doc=None):
 	)
 
 	set_delivery_date(doc.items, source_name)
+	doc.set_onload("load_after_mapping", False)
 
 	return doc
 

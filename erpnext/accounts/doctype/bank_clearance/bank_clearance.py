@@ -117,9 +117,9 @@ class BankClearance(Document):
 					)
 
 				else:
-					frappe.db.set_value(
-						d.payment_document, d.payment_entry, "clearance_date", d.clearance_date
-					)
+					# using db_set to trigger notification
+					payment_entry = frappe.get_doc(d.payment_document, d.payment_entry)
+					payment_entry.db_set("clearance_date", d.clearance_date)
 
 				clearance_date_updated = True
 
@@ -159,9 +159,6 @@ def get_payment_entries_for_bank_clearance(
 		as_dict=1,
 	)
 
-	if bank_account:
-		condition += "and bank_account = %(bank_account)s"
-
 	payment_entries = frappe.db.sql(
 		f"""
 			select
@@ -183,7 +180,6 @@ def get_payment_entries_for_bank_clearance(
 			"account": account,
 			"from": from_date,
 			"to": to_date,
-			"bank_account": bank_account,
 		},
 		as_dict=1,
 	)

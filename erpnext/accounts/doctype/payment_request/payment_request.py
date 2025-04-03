@@ -224,6 +224,7 @@ class PaymentRequest(Document):
 			sender=self.email_to,
 			currency=self.currency,
 			payment_gateway=self.payment_gateway,
+			phone_number=self.phone_number,
 		)
 
 		controller.validate_transaction_currency(self.currency)
@@ -312,6 +313,7 @@ class PaymentRequest(Document):
 				"payer_name": data.customer_name,
 				"order_id": self.name,
 				"currency": self.currency,
+				"payment_gateway": self.payment_gateway,
 			}
 		)
 
@@ -635,6 +637,7 @@ def make_payment_request(**args):
 				"party": args.get("party") or ref_doc.get("customer"),
 				"bank_account": bank_account,
 				"party_name": args.get("party_name") or ref_doc.get("customer_name"),
+				"phone_number": args.get("phone_number") if args.get("phone_number") else None,
 			}
 		)
 
@@ -765,24 +768,39 @@ def get_existing_payment_request_amount(ref_dt, ref_dn, statuses: list | None = 
 
 
 def get_existing_paid_amount(doctype, name):
-	PL = frappe.qb.DocType("Payment Ledger Entry")
+	PLE = frappe.qb.DocType("Payment Ledger Entry")
 	PER = frappe.qb.DocType("Payment Entry Reference")
 
 	query = (
-		frappe.qb.from_(PL)
+		frappe.qb.from_(PLE)
 		.left_join(PER)
 		.on(
-			(PER.reference_doctype == PL.against_voucher_type) & (PER.reference_name == PL.against_voucher_no)
+			(PLE.against_voucher_type == PER.reference_doctype)
+			& (PLE.against_voucher_no == PER.reference_name)
+			& (PLE.voucher_type == PER.parenttype)
+			& (PLE.voucher_no == PER.parent)
 		)
-		.select(Abs(Sum(PL.amount)).as_("total_paid_amount"))
-		.where(PL.against_voucher_type.eq(doctype))
-		.where(PL.against_voucher_no.eq(name))
-		.where(PL.amount < 0)
-		.where(PER.payment_request.isnull())
+		.select(
+			Abs(Sum(PLE.amount)).as_("total_amount"),
+			Abs(Sum(frappe.qb.terms.Case().when(PER.payment_request.isnotnull(), PLE.amount).else_(0))).as_(
+				"request_paid_amount"
+			),
+		)
+		.where(
+			(PLE.voucher_type.isin([doctype, "Journal Entry", "Payment Entry"]))
+			& (PLE.against_voucher_type == doctype)
+			& (PLE.against_voucher_no == name)
+			& (PLE.delinked == 0)
+			& (PLE.docstatus == 1)
+			& (PLE.amount < 0)
+		)
 	)
-	response = query.run()
 
-	return response[0][0] if response[0] else 0
+	result = query.run()
+	ledger_amount = flt(result[0][0]) if result else 0
+	request_paid_amount = flt(result[0][1]) if result else 0
+
+	return ledger_amount - request_paid_amount
 
 
 def get_gateway_details(args):  # nosemgrep
@@ -987,12 +1005,7 @@ def get_open_payment_requests_query(doctype, txt, searchfield, start, page_len, 
 
 	open_payment_requests = frappe.get_list(
 		"Payment Request",
-		filters={
-			**filters,
-			"status": ["!=", "Paid"],
-			"outstanding_amount": ["!=", 0],  # for compatibility with old data
-			"docstatus": 1,
-		},
+		filters=filters,
 		fields=["name", "grand_total", "outstanding_amount"],
 		order_by="transaction_date ASC,creation ASC",
 	)

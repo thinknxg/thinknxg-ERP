@@ -372,6 +372,53 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 
 		self.assertEqual(discrepancy_caused_by_exchange_rate_diff, amount)
 
+	def test_purchase_invoice_with_exchange_rate_difference_for_non_stock_item(self):
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
+			make_purchase_invoice as create_purchase_invoice,
+		)
+
+		# Creating Purchase Invoice with USD currency
+		pr = frappe.new_doc("Purchase Receipt")
+		pr.currency = "USD"
+		pr.company = "_Test Company with perpetual inventory"
+		pr.conversion_rate = (70,)
+		pr.supplier = "_Test Supplier USD"
+		pr.append(
+			"items",
+			{
+				"item_code": "_Test Non Stock Item",
+				"qty": 1,
+				"rate": 100,
+			},
+		)
+		pr.append(
+			"items",
+			{"item_code": "_Test Item", "qty": 1, "rate": 5, "warehouse": "Stores - TCP1"},
+		)
+		pr.insert()
+		pr.submit()
+
+		# Createing purchase invoice against Purchase Receipt
+		pi = create_purchase_invoice(pr.name)
+		pi.conversion_rate = 80
+		pi.credit_to = "_Test Payable USD - TCP1"
+		pi.insert()
+		pi.submit()
+
+		# Get exchnage gain and loss account
+		exchange_gain_loss_account = frappe.db.get_value("Company", pi.company, "exchange_gain_loss_account")
+
+		# fetching the latest GL Entry with exchange gain and loss account account
+		amount = frappe.db.get_value(
+			"GL Entry", {"account": exchange_gain_loss_account, "voucher_no": pi.name}, "debit"
+		)
+
+		discrepancy_caused_by_exchange_rate_diff = abs(
+			pi.items[1].base_net_amount - pr.items[1].base_net_amount
+		)
+
+		self.assertEqual(discrepancy_caused_by_exchange_rate_diff, amount)
+
 	def test_purchase_invoice_change_naming_series(self):
 		pi = frappe.copy_doc(test_records[1])
 		pi.insert()
@@ -1735,6 +1782,30 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 
 		frappe.db.set_single_value("Buying Settings", "set_landed_cost_based_on_purchase_invoice_rate", 1)
 
+		# Cost of Item is zero in Purchase Receipt
+		pr = make_purchase_receipt(qty=1, rate=0)
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"stock_value_difference",
+		)
+		self.assertEqual(stock_value_difference, 0)
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		for row in pi.items:
+			row.rate = 150
+
+		pi.save()
+		pi.submit()
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"stock_value_difference",
+		)
+		self.assertEqual(stock_value_difference, 150)
+
 		# Increase the cost of the item
 
 		pr = make_purchase_receipt(qty=1, rate=100)
@@ -1811,6 +1882,52 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 			"stock_value_difference",
 		)
 		self.assertEqual(stock_value_difference, 100)
+
+		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 1)
+
+	def test_adjust_incoming_rate_for_rejected_item(self):
+		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 0)
+
+		frappe.db.set_single_value("Buying Settings", "set_landed_cost_based_on_purchase_invoice_rate", 1)
+
+		# Cost of Item is zero in Purchase Receipt
+		pr = make_purchase_receipt(qty=1, rejected_qty=1, rate=0)
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"stock_value_difference",
+		)
+		self.assertEqual(stock_value_difference, 0)
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		for row in pi.items:
+			row.qty = 1
+			row.rate = 150
+
+		pi.save()
+		pi.submit()
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name, "warehouse": pi.items[0].warehouse},
+			"stock_value_difference",
+		)
+		self.assertEqual(stock_value_difference, 150)
+
+		stock_value_difference = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{
+				"voucher_type": "Purchase Receipt",
+				"voucher_no": pr.name,
+				"warehouse": pi.items[0].rejected_warehouse,
+			},
+			"stock_value_difference",
+		)
+
+		self.assertFalse(stock_value_difference)
+
+		frappe.db.set_single_value("Buying Settings", "set_landed_cost_based_on_purchase_invoice_rate", 0)
 
 		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 1)
 
@@ -2365,6 +2482,76 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 		item.reload()
 		self.assertEqual(item.last_purchase_rate, 0)
 
+	def test_adjust_incoming_rate_from_pi_with_multi_currency_and_partial_billing(self):
+		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 0)
+
+		frappe.db.set_single_value("Buying Settings", "set_landed_cost_based_on_purchase_invoice_rate", 1)
+
+		pr = make_purchase_receipt(
+			qty=10, rate=10, currency="USD", do_not_save=1, supplier="_Test Supplier USD"
+		)
+		pr.conversion_rate = 5300
+		pr.save()
+		pr.submit()
+
+		incoming_rate = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"incoming_rate",
+		)
+		self.assertEqual(incoming_rate, 53000)  # Asserting to confirm if the default calculation is correct
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		for row in pi.items:
+			row.qty = 1
+
+		pi.save()
+		pi.submit()
+
+		incoming_rate = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"incoming_rate",
+		)
+		# Test 1 : Incoming rate should not change as only the qty has changed and not the rate (this was not the case before)
+		self.assertEqual(incoming_rate, 53000)
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		for row in pi.items:
+			row.qty = 1
+			row.rate = 9
+
+		pi.save()
+		pi.submit()
+
+		incoming_rate = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"incoming_rate",
+		)
+		# Test 2 : Rate in new PI is lower than PR, so incoming rate should also be lower
+		self.assertEqual(incoming_rate, 50350)
+
+		pi = create_purchase_invoice_from_receipt(pr.name)
+		for row in pi.items:
+			row.qty = 1
+			row.rate = 12
+
+		pi.save()
+		pi.submit()
+
+		incoming_rate = frappe.db.get_value(
+			"Stock Ledger Entry",
+			{"voucher_type": "Purchase Receipt", "voucher_no": pr.name},
+			"incoming_rate",
+		)
+		# Test 3 : Rate in new PI is higher than PR, so incoming rate should also be higher
+		self.assertEqual(incoming_rate, 54766.667)
+
+		frappe.db.set_single_value("Buying Settings", "set_landed_cost_based_on_purchase_invoice_rate", 0)
+
+		frappe.db.set_single_value("Buying Settings", "maintain_same_rate", 1)
+
 	def test_opening_invoice_rounding_adjustment_validation(self):
 		pi = make_purchase_invoice(do_not_save=1)
 		pi.items[0].rate = 99.98
@@ -2423,6 +2610,78 @@ class TestPurchaseInvoice(FrappeTestCase, StockTestMixin):
 		]
 		self.assertEqual(len(actual), 3)
 		self.assertEqual(expected, actual)
+
+	def test_invoice_against_returned_pr(self):
+		from erpnext.stock.doctype.item.test_item import make_item
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
+			make_purchase_invoice as make_purchase_invoice_from_pr,
+		)
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import (
+			make_purchase_return_against_rejected_warehouse,
+		)
+
+		item = make_item("_Test Item For Invoice Against Returned PR", properties={"is_stock_item": 1}).name
+
+		original_value = frappe.db.get_single_value(
+			"Buying Settings", "bill_for_rejected_quantity_in_purchase_invoice"
+		)
+		frappe.db.set_single_value("Buying Settings", "bill_for_rejected_quantity_in_purchase_invoice", 0)
+
+		pr = make_purchase_receipt(item_code=item, qty=5, rejected_qty=5, rate=100)
+		pr_return = make_purchase_return_against_rejected_warehouse(pr.name)
+		pr_return.submit()
+
+		pi = make_purchase_invoice_from_pr(pr.name)
+		pi.save()
+		self.assertEqual(pi.items[0].qty, 5.0)
+
+		frappe.db.set_single_value(
+			"Buying Settings", "bill_for_rejected_quantity_in_purchase_invoice", original_value
+		)
+
+	def test_trx_currency_debit_credit_for_high_precision(self):
+		exc_rate = 0.737517516
+		pi = make_purchase_invoice(
+			currency="USD", conversion_rate=exc_rate, qty=1, rate=2000, do_not_save=True
+		)
+		pi.supplier = "_Test Supplier USD"
+		pi.save().submit()
+
+		expected = (
+			("_Test Account Cost for Goods Sold - _TC", 1475.04, 0.0, 2000.0, 0.0, "USD", exc_rate),
+			("_Test Payable USD - _TC", 0.0, 1475.04, 0.0, 2000.0, "USD", exc_rate),
+		)
+
+		actual = frappe.db.get_all(
+			"GL Entry",
+			filters={"voucher_no": pi.name},
+			fields=[
+				"account",
+				"debit",
+				"credit",
+				"debit_in_transaction_currency",
+				"credit_in_transaction_currency",
+				"transaction_currency",
+				"transaction_exchange_rate",
+			],
+			order_by="account",
+			as_list=1,
+		)
+		self.assertEqual(actual, expected)
+
+	def test_prevents_fully_returned_invoice_with_zero_quantity(self):
+		from erpnext.controllers.sales_and_purchase_return import StockOverReturnError, make_return_doc
+
+		invoice = make_purchase_invoice(qty=10)
+
+		return_doc = make_return_doc(invoice.doctype, invoice.name)
+		return_doc.items[0].qty = -10
+		return_doc.save().submit()
+
+		return_doc = make_return_doc(invoice.doctype, invoice.name)
+		return_doc.items[0].qty = 0
+
+		self.assertRaises(StockOverReturnError, return_doc.save)
 
 
 def set_advance_flag(company, flag, default_account):

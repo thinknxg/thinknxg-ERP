@@ -49,6 +49,7 @@ erpnext.sales_common = {
 				);
 
 				me.frm.set_query("contact_person", erpnext.queries.contact_query);
+				me.frm.set_query("company_contact_person", erpnext.queries.company_contact_query);
 				me.frm.set_query("customer_address", erpnext.queries.address_query);
 				me.frm.set_query("shipping_address_name", erpnext.queries.address_query);
 				me.frm.set_query("dispatch_address_name", erpnext.queries.dispatch_address_query);
@@ -446,22 +447,21 @@ erpnext.sales_common = {
 							args: { project: this.frm.doc.project },
 							callback: function (r, rt) {
 								if (!r.exc) {
-									$.each(me.frm.doc["items"] || [], function (i, row) {
-										if (r.message) {
+									if (r.message) {
+										$.each(me.frm.doc["items"] || [], function (i, row) {
 											frappe.model.set_value(
 												row.doctype,
 												row.name,
 												"cost_center",
 												r.message
 											);
-											frappe.msgprint(
-												__(
-													"Cost Center For Item with Item Code {0} has been Changed to {1}",
-													[row.item_name, r.message]
-												)
-											);
-										}
-									});
+										});
+										frappe.msgprint(
+											__("Cost Center for Item rows has been updated to {0}", [
+												r.message,
+											])
+										);
+									}
 								}
 							},
 						});

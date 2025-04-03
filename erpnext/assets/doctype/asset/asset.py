@@ -19,6 +19,7 @@ from frappe.utils import (
 )
 
 import erpnext
+from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import get_dimensions
 from erpnext.accounts.general_ledger import make_reverse_gl_entries
 from erpnext.assets.doctype.asset.depreciation import (
 	get_comma_separated_links,
@@ -94,9 +95,9 @@ class Asset(AccountsController):
 		purchase_amount: DF.Currency
 		purchase_date: DF.Date | None
 		purchase_invoice: DF.Link | None
-		purchase_invoice_item: DF.Link | None
+		purchase_invoice_item: DF.Data | None
 		purchase_receipt: DF.Link | None
-		purchase_receipt_item: DF.Link | None
+		purchase_receipt_item: DF.Data | None
 		split_from: DF.Link | None
 		status: DF.Literal[
 			"Draft",
@@ -110,7 +111,7 @@ class Asset(AccountsController):
 			"Issue",
 			"Receipt",
 			"Capitalized",
-			"Decapitalized",
+			"Work In Progress",
 		]
 		supplier: DF.Link | None
 		total_asset_cost: DF.Currency
@@ -120,6 +121,7 @@ class Asset(AccountsController):
 
 	def validate(self):
 		self.validate_precision()
+		self.set_purchase_doc_row_item()
 		self.validate_asset_values()
 		self.validate_asset_and_reference()
 		self.validate_item()
@@ -197,6 +199,38 @@ class Asset(AccountsController):
 
 	def after_delete(self):
 		add_asset_activity(self.name, _("Asset deleted"))
+
+	def set_purchase_doc_row_item(self):
+		if self.is_existing_asset or self.is_composite_asset:
+			return
+
+		self.purchase_amount = self.gross_purchase_amount
+		purchase_doc_type = "Purchase Receipt" if self.purchase_receipt else "Purchase Invoice"
+		purchase_doc = self.purchase_receipt or self.purchase_invoice
+
+		if not purchase_doc:
+			return
+
+		linked_item = self.get_linked_item(purchase_doc_type, purchase_doc)
+
+		if linked_item:
+			if purchase_doc_type == "Purchase Receipt":
+				self.purchase_receipt_item = linked_item
+			else:
+				self.purchase_invoice_item = linked_item
+
+	def get_linked_item(self, purchase_doc_type, purchase_doc):
+		purchase_doc = frappe.get_doc(purchase_doc_type, purchase_doc)
+
+		for item in purchase_doc.items:
+			if self.asset_quantity > 1:
+				if item.base_net_amount == self.gross_purchase_amount and item.qty == self.asset_quantity:
+					return item.name
+				elif item.qty == self.asset_quantity:
+					return item.name
+			else:
+				if item.base_net_rate == self.gross_purchase_amount and item.qty == self.asset_quantity:
+					return item.name
 
 	def validate_asset_and_reference(self):
 		if self.purchase_invoice or self.purchase_receipt:
@@ -308,12 +342,14 @@ class Asset(AccountsController):
 				)
 
 	def validate_precision(self):
-		float_precision = cint(frappe.db.get_default("float_precision")) or 2
 		if self.gross_purchase_amount:
-			self.gross_purchase_amount = flt(self.gross_purchase_amount, float_precision)
+			self.gross_purchase_amount = flt(
+				self.gross_purchase_amount, self.precision("gross_purchase_amount")
+			)
+
 		if self.opening_accumulated_depreciation:
 			self.opening_accumulated_depreciation = flt(
-				self.opening_accumulated_depreciation, float_precision
+				self.opening_accumulated_depreciation, self.precision("opening_accumulated_depreciation")
 			)
 
 	def validate_asset_values(self):
@@ -410,6 +446,9 @@ class Asset(AccountsController):
 			)
 
 	def validate_asset_finance_books(self, row):
+		row.expected_value_after_useful_life = flt(
+			row.expected_value_after_useful_life, self.precision("gross_purchase_amount")
+		)
 		if flt(row.expected_value_after_useful_life) >= flt(self.gross_purchase_amount):
 			frappe.throw(
 				_("Row {0}: Expected Value After Useful Life must be less than Gross Purchase Amount").format(
@@ -430,7 +469,10 @@ class Asset(AccountsController):
 			self.opening_accumulated_depreciation = 0
 			self.opening_number_of_booked_depreciations = 0
 		else:
-			depreciable_amount = flt(self.gross_purchase_amount) - flt(row.expected_value_after_useful_life)
+			depreciable_amount = flt(
+				flt(self.gross_purchase_amount) - flt(row.expected_value_after_useful_life),
+				self.precision("gross_purchase_amount"),
+			)
 			if flt(self.opening_accumulated_depreciation) > depreciable_amount:
 				frappe.throw(
 					_("Opening Accumulated Depreciation must be less than or equal to {0}").format(
@@ -481,11 +523,7 @@ class Asset(AccountsController):
 
 	def validate_expected_value_after_useful_life(self):
 		for row in self.get("finance_books"):
-			row.expected_value_after_useful_life = flt(
-				row.expected_value_after_useful_life, self.precision("gross_purchase_amount")
-			)
 			depr_schedule = get_depr_schedule(self.name, "Draft", row.finance_book)
-
 			if not depr_schedule:
 				continue
 
@@ -798,6 +836,9 @@ class Asset(AccountsController):
 			):
 				return args.get("rate_of_depreciation")
 
+			if args.get("rate_of_depreciation") and not flt(args.get("expected_value_after_useful_life")):
+				return args.get("rate_of_depreciation")
+
 			if self.flags.increase_in_asset_value_due_to_repair:
 				value = flt(args.get("expected_value_after_useful_life")) / flt(
 					args.get("value_after_depreciation")
@@ -880,6 +921,7 @@ def get_asset_naming_series():
 
 @frappe.whitelist()
 def make_sales_invoice(asset, item_code, company, serial_no=None):
+	asset_doc = frappe.get_doc("Asset", asset)
 	si = frappe.new_doc("Sales Invoice")
 	si.company = company
 	si.currency = frappe.get_cached_value("Company", company, "default_currency")
@@ -896,6 +938,16 @@ def make_sales_invoice(asset, item_code, company, serial_no=None):
 			"qty": 1,
 		},
 	)
+
+	accounting_dimensions = get_dimensions(with_cost_center_and_project=True)
+	for dimension in accounting_dimensions[0]:
+		si.update(
+			{
+				dimension["fieldname"]: asset_doc.get(dimension["fieldname"])
+				or dimension.get("default_dimension")
+			}
+		)
+
 	si.set_missing_values()
 	return si
 
@@ -1104,6 +1156,30 @@ def has_active_capitalization(asset):
 		"Asset Capitalization", filters={"target_asset": asset, "docstatus": 1}
 	)
 	return active_capitalizations > 0
+
+
+@frappe.whitelist()
+def get_values_from_purchase_doc(purchase_doc_name, item_code, doctype):
+	purchase_doc = frappe.get_doc(doctype, purchase_doc_name)
+	matching_items = [item for item in purchase_doc.items if item.item_code == item_code]
+
+	if not matching_items:
+		frappe.throw(_(f"Selected {doctype} does not contain the Item Code {item_code}"))
+
+	first_item = matching_items[0]
+	is_multiple_items = len(matching_items) > 1
+
+	return {
+		"company": purchase_doc.company,
+		"purchase_date": purchase_doc.get("bill_date") or purchase_doc.get("posting_date"),
+		"gross_purchase_amount": flt(first_item.base_net_amount),
+		"asset_quantity": first_item.qty,
+		"cost_center": first_item.cost_center or purchase_doc.get("cost_center"),
+		"asset_location": first_item.get("asset_location"),
+		"is_multiple_items": is_multiple_items,
+		"purchase_receipt_item": first_item.name if doctype == "Purchase Receipt" else None,
+		"purchase_invoice_item": first_item.name if doctype == "Purchase Invoice" else None,
+	}
 
 
 @frappe.whitelist()
