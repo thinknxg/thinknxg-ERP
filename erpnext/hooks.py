@@ -1,20 +1,20 @@
 app_name = "erpnext"
-app_title = "ERPNext"
-app_publisher = "Frappe Technologies Pvt. Ltd."
+app_title = "thinkNXG ERP"
+app_publisher = "thinknxg Technologies Pvt. Ltd."
 app_description = """ERP made simple"""
 app_icon = "fa fa-th"
 app_color = "#e74c3c"
 app_email = "hello@frappe.io"
 app_license = "GNU General Public License (v3)"
-source_link = "https://github.com/frappe/erpnext"
-app_logo_url = "/assets/erpnext/images/erpnext-logo.svg"
+source_link = "https://github.com/thinknxg/thinknxg-ERP.git"
+app_logo_url = "/assets/erpnext/images/thinkNXG-logo.jpg"
 
 
 add_to_apps_screen = [
 	{
-		"name": "erpnext",
-		"logo": "/assets/erpnext/images/erpnext-logo-blue.png",
-		"title": "ERPNext",
+		"name": "thinkNXG ERP",
+		"logo": "/assets/erpnext/images/thinkNXG-logo.jpg",
+		"title": "thinkNXG ERP",
 		"route": "/app/home",
 		"has_permission": "erpnext.check_app_permission",
 	}
@@ -110,8 +110,8 @@ calendars = ["Task", "Work Order", "Sales Order", "Holiday List", "ToDo"]
 website_generators = ["BOM", "Sales Partner"]
 
 website_context = {
-	"favicon": "/assets/erpnext/images/erpnext-favicon.svg",
-	"splash_image": "/assets/erpnext/images/erpnext-logo.svg",
+	"favicon": "/assets/erpnext/images/thinkNXG-logo.jpg",
+	"splash_image": "/assets/erpnext/images/thinkNXG-logo.jpg",
 }
 
 # nosemgrep
